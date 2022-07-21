@@ -3,19 +3,24 @@ use std::sync::mpsc;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-struct Job;
+type Job = Box<dyn FnOnce() + Send + 'static>;
 
 struct Worker {
     id: usize,
     thread: thread::JoinHandle<()>,
-    receiver: Arc<Mutex<mpsc::Receiver<Job>>>,
 }
 
 impl Worker {
     fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Worker {
-        let thread = thread::spawn(|| {});
+        let thread = thread::spawn(move || loop {
+            let job = receiver.lock().unwrap().recv().unwrap();
 
-        Worker { id, thread, receiver }
+            println!("Worker {} got a job; executing.", id);
+
+            job();
+        });
+
+        Worker { id, thread }
     }
 }
 
@@ -52,7 +57,9 @@ impl ThreadPool {
     where
         F: FnOnce() + Send + 'static,
     {
+        let job = Box::new(f);
 
+        self.sender.send(job).unwrap();
     }
 }
 
